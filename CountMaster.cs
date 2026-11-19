@@ -4,18 +4,29 @@ using System.Diagnostics;
 using AgentsPoker.Core;
 
 /// <summary>
-/// Versión 3 (V2 con límites de tiempo más conservadores). Mejoras sobre la plantilla, todas con temas vistos en clase:
-///  - Rollouts / planificación online (Clases 10 y 12): equity Monte Carlo en cada decisión.
-///  - Modelo de rivales aprendido por promedio incremental (Clase 10): agresión, VPIP, showdowns.
 ///  - Rangos ponderados: el rival que apuesta ya no se simula con manos al azar sino con manos
 ///    más fuertes (mejor de m candidatas). Es una simulación de rollout con muestreo sesgado.
 ///  - Utilidad esperada (Clase 6, principio MEU): pagar si equity >= pot odds; subir si el equity
 ///    supera la parte "justa" 1/(n+1) por un margen, que baja con más rivales y sube si ya hubo subidas.
+///  - Contexto de torneo (utilidad según el objetivo): en las últimas manos, si ya voy dentro del cupo de
+///    clasificación protejo fichas (umbrales más altos, más cuanto mayor el colchón); si voy fuera arriesgo
+///    (umbrales más bajos). En la mesa final solo cuenta el 1.º.
 /// </summary>
-public sealed class CountMasterV3 : IPokerAgent, IHandObserver
+public sealed class CountMasterV4_SinTorneo : IPokerAgent, IHandObserver
 {
     private const int PresupuestoMs = 350;
     private const int MaxSimulaciones = 8000;
+
+    // ---- Torneo (parámetros de instancia, no static: se pueden probar con new CountMasterV4_SinTorneo { UsarTorneo = false }) ----
+    public bool UsarTorneo = false;
+    /// <summary>Cuántas manos finales dura la rampa (crece linealmente hasta la última).</summary>
+    public int ManosCriticas = 12;
+    public double ProteccionSube = 0.05, ProteccionPaga = 0.03;
+    public double PersecucionSube = 0.05, PersecucionPaga = 0.03;
+    /// <summary>Multiplicador de arriesgar en la mesa final si no voy 1.º.</summary>
+    public double FactorFinal = 1.5;
+    /// <summary>Ventaja en fichas sobre el primero fuera del cupo desde la cual se protege al máximo.</summary>
+    public double ColchonCompleto = 400;
     private const string Rangos = "23456789TJQKA";
 
     private readonly Random _rng = new Random(2024);
@@ -32,7 +43,7 @@ public sealed class CountMasterV3 : IPokerAgent, IHandObserver
     }
     private readonly Dictionary<string, Perfil> _rivales = new Dictionary<string, Perfil>();
 
-    public CountMasterV3()
+    public CountMasterV4_SinTorneo()
     {
         for (int i = 0; i < Card.DeckSize; i++)
         {
@@ -73,14 +84,52 @@ public sealed class CountMasterV3 : IPokerAgent, IHandObserver
             double umbralSubir = justo + (0.14 - 0.02 * (rivales - 1));
             umbralSubir += 0.02 * Math.Min(raisesOtros, 3);
 
+            double umbralPagar = potOdds - ajuste;
+            if (UsarTorneo) AjusteTorneo(o, ref umbralSubir, ref umbralPagar);
+
             if (o.CanRaise && equity >= umbralSubir) return ActionType.RAISE;
             if (o.ToCall == 0) return ActionType.CALL;       // check gratis
-            if (equity + ajuste >= potOdds) return ActionType.CALL;
+            if (equity >= umbralPagar) return ActionType.CALL;
             return ActionType.FOLD;
         }
         catch
         {
             return ActionType.CALL;
+        }
+    }
+
+    /// <summary>Ajusta los umbrales según el puesto de clasificación en las últimas manos de la mesa.</summary>
+    private void AjusteTorneo(PlayerObservation o, ref double umbralSubir, ref double umbralPagar)
+    {
+        var m = o.Match;
+        if (m == null || !m.HasHandLimit || ManosCriticas <= 0) return;
+        int quedan = m.HandsRemaining;                       // cuenta la mano actual
+        if (quedan < 1 || quedan > ManosCriticas) return;
+
+        double rampa = (ManosCriticas - quedan + 1) / (double)ManosCriticas;   // (0..1]
+        int cupos = m.IsFinalTable ? 1 : (m.QualifyingSpots > 0 ? m.QualifyingSpots : 3);
+
+        var otros = new List<int>();
+        int mias = o.MyStack + o.MyCommittedThisHand;       // stack al inicio de la mano
+        foreach (var p in o.Players)
+            if (p.Seat != o.Seat) otros.Add(p.Stack + p.CommittedThisHand);
+        if (otros.Count < cupos) return;
+        otros.Sort((a, b) => b.CompareTo(a));
+        // Si voy dentro: el mejor que queda fuera. Si voy fuera: el último que entra.
+        int referencia = otros[cupos - 1];
+        int diferencia = mias - referencia;
+
+        if (diferencia > 0)
+        {
+            double colchon = Math.Min(1.0, diferencia / Math.Max(1.0, ColchonCompleto));
+            umbralSubir += ProteccionSube * rampa * colchon;
+            umbralPagar += ProteccionPaga * rampa * colchon;
+        }
+        else
+        {
+            double f = m.IsFinalTable ? FactorFinal : 1.0;
+            umbralSubir -= PersecucionSube * rampa * f;
+            umbralPagar -= PersecucionPaga * rampa * f;
         }
     }
 
