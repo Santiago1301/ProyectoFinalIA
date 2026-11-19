@@ -12,13 +12,13 @@ using AgentsPoker.Core;
 ///    clasificación protejo fichas (umbrales más altos, más cuanto mayor el colchón); si voy fuera arriesgo
 ///    (umbrales más bajos). En la mesa final solo cuenta el 1.º.
 /// </summary>
-public sealed class CountMasterV4_SinTorneo : IPokerAgent, IHandObserver
+public sealed class CountMaster : IPokerAgent, IHandObserver
 {
     private const int PresupuestoMs = 350;
     private const int MaxSimulaciones = 8000;
 
-    // ---- Torneo (parámetros de instancia, no static: se pueden probar con new CountMasterV4_SinTorneo { UsarTorneo = false }) ----
-    public bool UsarTorneo = false;
+    // ---- Torneo (parámetros de instancia, no static: se pueden probar con new CountMasterV4 { UsarTorneo = false }) ----
+    public bool UsarTorneo = true;
     /// <summary>Cuántas manos finales dura la rampa (crece linealmente hasta la última).</summary>
     public int ManosCriticas = 12;
     public double ProteccionSube = 0.05, ProteccionPaga = 0.03;
@@ -43,7 +43,7 @@ public sealed class CountMasterV4_SinTorneo : IPokerAgent, IHandObserver
     }
     private readonly Dictionary<string, Perfil> _rivales = new Dictionary<string, Perfil>();
 
-    public CountMasterV4_SinTorneo()
+    public CountMaster()
     {
         for (int i = 0; i < Card.DeckSize; i++)
         {
