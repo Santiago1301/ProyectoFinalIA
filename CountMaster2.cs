@@ -4,7 +4,7 @@ using System.Diagnostics;
 using AgentsPoker.Core;
 
 /// <summary>
-/// Versión 2. Mejoras sobre la plantilla, todas con temas vistos en clase:
+/// Versión 3 (V2 con límites de tiempo más conservadores). Mejoras sobre la plantilla, todas con temas vistos en clase:
 ///  - Rollouts / planificación online (Clases 10 y 12): equity Monte Carlo en cada decisión.
 ///  - Modelo de rivales aprendido por promedio incremental (Clase 10): agresión, VPIP, showdowns.
 ///  - Rangos ponderados: el rival que apuesta ya no se simula con manos al azar sino con manos
@@ -12,10 +12,10 @@ using AgentsPoker.Core;
 ///  - Utilidad esperada (Clase 6, principio MEU): pagar si equity >= pot odds; subir si el equity
 ///    supera la parte "justa" 1/(n+1) por un margen, que baja con más rivales y sube si ya hubo subidas.
 /// </summary>
-public sealed class CountMasterV2 : IPokerAgent, IHandObserver
+public sealed class CountMasterV3 : IPokerAgent, IHandObserver
 {
-    private const int PresupuestoMs = 500;
-    private const int MaxSimulaciones = 20000;
+    private const int PresupuestoMs = 350;
+    private const int MaxSimulaciones = 8000;
     private const string Rangos = "23456789TJQKA";
 
     private readonly Random _rng = new Random(2024);
@@ -32,7 +32,7 @@ public sealed class CountMasterV2 : IPokerAgent, IHandObserver
     }
     private readonly Dictionary<string, Perfil> _rivales = new Dictionary<string, Perfil>();
 
-    public CountMasterV2()
+    public CountMasterV3()
     {
         for (int i = 0; i < Card.DeckSize; i++)
         {
